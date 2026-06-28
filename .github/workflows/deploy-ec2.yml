@@ -1,0 +1,70 @@
+name: Deploy CloudMentor to EC2
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build and deploy to EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Add EC2 host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync project files to EC2
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          APP_DIR: ${{ secrets.EC2_APP_DIR }}
+        run: |
+          APP_DIR="${APP_DIR:-/opt/cloudmentor}"
+          ssh "$EC2_USER@$EC2_HOST" "sudo mkdir -p $APP_DIR && sudo chown -R $EC2_USER:$EC2_USER $APP_DIR"
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude 'frontend/dist' \
+            --exclude 'backend/.aws-sam' \
+            ./ "$EC2_USER@$EC2_HOST:$APP_DIR/"
+
+      - name: Deploy on EC2
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          AI_MODE: ${{ secrets.AI_MODE }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          MATERIALS_BUCKET: ${{ secrets.MATERIALS_BUCKET }}
+          TABLE_NAME: ${{ secrets.TABLE_NAME }}
+          STORAGE_MODE: ${{ secrets.STORAGE_MODE }}
+        run: |
+          APP_DIR="${EC2_APP_DIR:-/opt/cloudmentor}"
+          ssh "$EC2_USER@$EC2_HOST" \
+            "cd $APP_DIR && chmod +x scripts/ec2-deploy.sh && \
+            APP_DIR='$APP_DIR' \
+            APP_USER='$EC2_USER' \
+            PUBLIC_HOST='$EC2_HOST' \
+            PUBLIC_FRONTEND_ORIGIN='http://$EC2_HOST' \
+            FRONTEND_API_BASE_URL='http://$EC2_HOST/api' \
+            OPENAI_API_KEY='$OPENAI_API_KEY' \
+            OPENAI_MODEL='${OPENAI_MODEL:-gpt-4.1-mini}' \
+            AI_MODE='${AI_MODE:-mock}' \
+            AWS_REGION='${AWS_REGION:-ap-southeast-1}' \
+            MATERIALS_BUCKET='$MATERIALS_BUCKET' \
+            TABLE_NAME='$TABLE_NAME' \
+            STORAGE_MODE='${STORAGE_MODE:-s3}' \
+            ./scripts/ec2-deploy.sh"

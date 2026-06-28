@@ -1,0 +1,57 @@
+name: Deploy Serverless Backend to AWS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-serverless-backend.yml"
+
+jobs:
+  deploy-backend:
+    name: SAM deploy Lambda/API/S3/DynamoDB
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set up SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build and deploy SAM backend
+        working-directory: backend
+        env:
+          SAM_STACK_NAME: ${{ secrets.SAM_STACK_NAME }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          AI_MODE: ${{ secrets.AI_MODE }}
+          CORS_ORIGIN: ${{ secrets.CORS_ORIGIN }}
+        run: |
+          npm ci || npm install
+          sam build
+          sam deploy \
+            --stack-name "${SAM_STACK_NAME:-cloudmentor}" \
+            --region "$AWS_REGION" \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              OpenAiApiKey="$OPENAI_API_KEY" \
+              OpenAiModel="${OPENAI_MODEL:-gpt-4.1-mini}" \
+              AiMode="${AI_MODE:-openai}" \
+              CorsOrigin="${CORS_ORIGIN:-*}"
