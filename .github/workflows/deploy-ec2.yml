@@ -1,29 +1,37 @@
-name: Deploy CloudMentor to EC2
+name: Deploy CloudMentor to EC2    # Just the name of the workflow, shown in the GitHub Actions tab.
 
-on:
+on:                                # This says when the workflow runs:
   push:
-    branches: ["main"]
-  workflow_dispatch:
+    branches: ["main"]             # Automatically, whenever someone pushes code to the main branch.
+  workflow_dispatch:               # Manually, whenever someone clicks "Run workflow" in GitHub's UI
 
+# Defines one job called deploy. It runs on a fresh Ubuntu virtual machine provided by GitHub.
 jobs:
   deploy:
     name: Build and deploy to EC2
     runs-on: ubuntu-latest
 
     steps:
+      # Downloads your repo's code onto that virtual machine so later steps can use it.
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Loads a private SSH key (stored securely in GitHub Secrets) into an SSH agent
+      # so the workflow can log into the EC2 server without typing a password.
       - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
+        uses: webfactory/ssh-agent@v0.9.0      
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
+      # Creates the .ssh folder and adds the EC2 server's "fingerprint" to the list of trusted hosts
+      # so SSH doesn't stop and ask "do you trust this server?" during the automated run.
       - name: Add EC2 host key
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
 
+      # The command in the run section will syncs everything from your current directory (except the excluded items) 
+      # to the specified directory on your EC2 instance.
       - name: Sync project files to EC2
         env:
           EC2_USER: ${{ secrets.EC2_USER }}
@@ -38,9 +46,9 @@ jobs:
             --exclude 'frontend/dist' \
             --exclude 'backend/.aws-sam' \
             ./ "$EC2_USER@$EC2_HOST:$APP_DIR/"
-
+            
       - name: Deploy on EC2
-        env:
+        env:        # Set Env variables of GH Runner machine from GH secretes
           EC2_USER: ${{ secrets.EC2_USER }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}
@@ -51,7 +59,7 @@ jobs:
           MATERIALS_BUCKET: ${{ secrets.MATERIALS_BUCKET }}
           TABLE_NAME: ${{ secrets.TABLE_NAME }}
           STORAGE_MODE: ${{ secrets.STORAGE_MODE }}
-        run: |
+        run: |         # Set Env variables of Server machine from GH Runner Env
           APP_DIR="${EC2_APP_DIR:-/opt/cloudmentor}"
           ssh "$EC2_USER@$EC2_HOST" \
             "cd $APP_DIR && chmod +x scripts/ec2-deploy.sh && \
